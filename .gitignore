@@ -12,3 +12,6 @@ Thumbs.db
 
 # Temporary files and build outputs
 temps/
+
+# Editor/IDE
+.antigravitycli/
