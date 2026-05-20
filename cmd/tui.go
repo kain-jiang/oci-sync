@@ -391,9 +391,9 @@ func (m model) getDimensions() (sidebarW, mainW, panesH, detailsH int) {
 		h = 30
 	}
 
-	sidebarW = 30
-	if w < 90 {
-		sidebarW = 24
+	sidebarW = 20
+	if w < 80 {
+		sidebarW = 16
 	}
 
 	mainW = w - sidebarW - 6
@@ -479,18 +479,11 @@ func (m model) View() string {
 		sizeW := 10
 		encW := 11
 
-		rem := usableW - sizeW - encW - 3
-		if rem < 24 {
-			rem = 24
-		}
-
-		tagW := (rem * 6) / 10
-		if tagW < 20 {
-			tagW = 20
-		}
-		verW := rem - tagW
-		if verW < 12 {
-			verW = 12
+		// Version column is typically short, 14 characters is plenty.
+		verW := 14
+		tagW := usableW - sizeW - encW - verW - 3
+		if tagW < 24 {
+			tagW = 24
 		}
 
 		headerStr := fmt.Sprintf("  %-*s %-10s %-11s %-*s", tagW, "TAG", "SIZE", "ENCRYPTED", verW, "VERSION")

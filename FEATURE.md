@@ -15,6 +15,7 @@
 - `oci-sync alias add`：添加新的 shortcut。
 - `oci-sync alias remove`：删除 shortcut。
 - `oci-sync recent`：查看活动历史记录。
+- `oci-sync tui`：启动全屏分栏交互式 TUI 管理 shortcuts 的 artifacts。
 - `oci-sync <name> push`：快捷推送命令，通过 `shortcuts.<name>.repo` 配置仓库，仅用 `--tag` 指定远程标签，支持 `--label`。
 - `oci-sync <name> pull`：快捷拉取命令，通过 `shortcuts.<name>.repo` 配置仓库，仅用 `--tag` 指定远程标签。
 - `oci-sync <name> list`：快捷列举命令，通过 `shortcuts.<name>.repo` 配置仓库，直接列出所有 tags，支持 `--label` 筛选。
@@ -122,7 +123,26 @@ oci-sync recent --clear
 - activity cache 存储在 `~/.cache/oci-sync/activity.json`（支持 `XDG_CACHE_HOME`）
 - 记录 push/pull/delete/label 等操作的时间、远程引用、本地路径、标签、操作结果
 
-8. shortcut commands
+8. tui
+
+启动全屏分栏的 Terminal User Interface (TUI) 管理 shortcuts。
+
+```bash
+oci-sync tui
+```
+
+- **分栏设计**：左侧为 shortcuts 列表，右侧为对应的 artifacts (tags) 表格，下方实时展示所选 artifact 的详细元数据（如 Full Name, Digest, Version, Size, Encryption, Labels 等）。
+- **键盘操作**：
+  - `Tab` / `左右方向键` / `h/l`：在 Shortcuts 与 Artifacts 栏之间切换焦点
+  - `Up/Down` / `j/k`：在聚焦栏内导航选择
+  - `Enter` (在 Shortcuts 栏)：加载对应快捷库的 tags
+  - `p` (在 Artifacts 栏)：拉取所选的 tag 到本地，弹窗输入本地路径和密码
+  - `d` (在 Artifacts 栏)：从远程仓库删除所选 tag，弹窗确认
+  - `r` (在 Artifacts 栏)：手动重新加载当前 tag 列表
+  - `Esc`：关闭弹窗或退回左侧边栏
+  - `q` / `Ctrl+C`：退出工具
+
+9. shortcut commands
 
 shortcut 命令依赖配置文件中的 `shortcuts.<name>.repo`：
 

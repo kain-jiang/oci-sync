@@ -21,7 +21,7 @@
 │                         CLI 层                            │
 │ cmd/root.go   cmd/push.go   cmd/pull.go   cmd/shortcut.go│
 │ cmd/delete.go cmd/list.go   cmd/label.go  cmd/alias.go   │
-│ cmd/recent.go                                              │
+│ cmd/recent.go cmd/tui.go                                 │
 └──────────────┬───────────────┬──────────────┬────────────┘
                │              │
       ┌────────▼───┐    ┌─────▼────────┐
@@ -104,6 +104,13 @@ CLI 参数传入 → 读取 ~/.cache/oci-sync/activity.json
            → 支持 --clear 清空历史记录
 ```
 
+**数据流（tui）**
+```
+CLI 启动 → 启动全屏分栏交互界面 (Tab 切换 Focus，p 拉取，d 删除，r 刷新)
+        → [oci.List] 获取快捷方式下的镜像 tag 列表并更新右侧面板
+        → [oci.Pull] 或 [oci.Delete] 执行本地拉取或远程删除，并以居中弹窗展示执行状态
+```
+
 **数据流（activity recording）**
 ```
 CLI push/pull/delete/label 操作成功
@@ -133,6 +140,7 @@ oci-sync/
 │   ├── label.go                   # label 子命令 (set/unset)
 │   ├── alias.go                   # alias 子命令 (list/add/remove)
 │   ├── recent.go                  # recent 子命令（查看活动历史）
+│   ├── tui.go                     # tui 子命令（全屏分栏管理）
 │   └── utils.go                   # 工具函数（formatBytes）
 └── internal/
     ├── config/
@@ -482,6 +490,31 @@ oci-sync recent --clear
 | `--clear` | 否 | 清空所有活动记录 |
 
 **存储位置**：`~/.cache/oci-sync/activity.json`（支持 `XDG_CACHE_HOME` 环境变量）
+
+### tui
+
+启动全屏 TUI 交互界面，分栏管理 shortcuts 的 artifacts。
+
+```bash
+# 启动 TUI 界面
+oci-sync tui
+```
+
+**界面分区**：
+- **Shortcuts (左侧边栏)**：展示配置的 shortcuts，可按 Tab 或左右方向键切换聚焦，使用 Up/Down 导航，Enter 键加载对应仓库下的 artifacts。
+- **Artifacts (右侧主栏)**：显示当前 shortcut 下 of tags 列表（包含 `TAG`、`SIZE`、`ENCRYPTED`、`VERSION`），宽度自适应调整。
+- **Details & Status (下方详情栏)**：实时显示当前选中 artifact 的 Full Name、Digest、Version、Size、Encryption 状态以及 Labels。
+- **弹窗 Dialog (居中浮动)**：路径输入、密码提示、删除确认及执行状态将以双线框浮动弹窗的形式居中显示。
+
+**快捷键**：
+- `Tab` / `左右方向键` / `h/l`：在 Shortcuts 与 Artifacts 栏之间切换焦点
+- `Up/Down` / `j/k`：在当前聚焦的栏内导航
+- `Enter` (在 Shortcuts 栏)：加载选中的仓库
+- `p` (在 Artifacts 栏)：拉取选中的 artifact
+- `d` (在 Artifacts 栏)：删除选中的 artifact
+- `r` (在 Artifacts 栏)：重新加载当前 tag 列表
+- `Esc`：关闭输入弹窗或将焦点退回到左侧 Shortcuts 栏
+- `q` / `Ctrl+C`：退出工具
 
 ---
 

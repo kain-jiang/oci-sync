@@ -197,6 +197,19 @@ oci-sync recent --format yaml
 oci-sync recent --clear
 ```
 
+### tui — 全屏交互式 TUI 管理
+
+使用全屏分栏终端界面以极佳的视觉交互管理快捷仓库和 artifacts。
+
+```bash
+# 启动 TUI 界面
+oci-sync tui
+```
+
+- **分栏结构**：左侧展示 shortcuts 列表，右侧展示该仓库下的 tags/artifacts 列表，下方实时更新展示选中 artifact 的详细元数据（包括 Full Name、Digest、Version、Size、Encryption 状态和 Labels）。
+- **极简操作**：支持 Tab/左右方向键在分栏间切换，使用 `p` 键拉取/解密（弹窗输入本地路径与密码），使用 `d` 键删除（弹窗确认），使用 `r` 键刷新 tags。
+
+
 ### 参数说明
 
 | 参数 | 说明 |
