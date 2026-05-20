@@ -469,34 +469,51 @@ func (m model) View() string {
 	}
 	mb.WriteString(styleHeading.Render(" "+repoTitle) + "\n")
 
-	switch m.state {
-	case stateShortcuts:
-		mb.WriteString(styleNormal.Render("\n  Select a shortcut on the left\n  and press Enter to fetch tags."))
-	case stateArtifactsLoading:
+	if m.state == stateArtifactsLoading {
 		mb.WriteString(styleNormal.Render("\n  Loading repository tags from registry...\n  Please wait."))
-	case stateArtifacts:
-		if len(m.artifacts) == 0 {
-			mb.WriteString(styleNormal.Render("\n  No artifacts found in this repository."))
-		} else {
-			// Header
-			mb.WriteString(styleHeading.Render(fmt.Sprintf("  %-20s %-10s %-10s %-10s", "TAG", "SIZE", "ENCRYPTED", "VERSION")) + "\n")
-			for i, a := range m.artifacts {
-				tagStr := truncate(a.Tag, 18)
-				sizeStr := formatBytes(int(a.Size))
-				encStr := "No"
-				if a.Encrypted {
-					encStr = "Yes"
-				}
-				verStr := truncate(a.Version, 8)
-				rowStr := fmt.Sprintf("  %-20s %-10s %-10s %-10s", tagStr, sizeStr, encStr, verStr)
+	} else if len(m.artifacts) == 0 {
+		mb.WriteString(styleNormal.Render("\n  Select a shortcut on the left\n  and press Enter to fetch tags."))
+	} else {
+		// Calculate column widths dynamically based on mainW
+		usableW := mainW - 4
+		sizeW := 10
+		encW := 11
 
-				if i == m.artifactIndex {
-					mb.WriteString(styleSelected.Render(" ▸"+rowStr[2:]))
-				} else {
-					mb.WriteString(styleNormal.Render(rowStr))
-				}
-				mb.WriteString("\n")
+		rem := usableW - sizeW - encW - 3
+		if rem < 24 {
+			rem = 24
+		}
+
+		tagW := (rem * 6) / 10
+		if tagW < 20 {
+			tagW = 20
+		}
+		verW := rem - tagW
+		if verW < 12 {
+			verW = 12
+		}
+
+		headerStr := fmt.Sprintf("  %-*s %-10s %-11s %-*s", tagW, "TAG", "SIZE", "ENCRYPTED", verW, "VERSION")
+		mb.WriteString(styleHeading.Render(headerStr) + "\n")
+
+		for i, a := range m.artifacts {
+			tagStr := truncate(a.Tag, tagW-2)
+			sizeStr := formatBytes(int(a.Size))
+			encStr := "No"
+			if a.Encrypted {
+				encStr = "Yes"
 			}
+			verStr := truncate(a.Version, verW-2)
+			rowStr := fmt.Sprintf("  %-*s %-10s %-11s %-*s", tagW, tagStr, sizeStr, encStr, verW, verStr)
+
+			if i == m.artifactIndex && m.state == stateArtifacts {
+				mb.WriteString(styleSelected.Render(" ▸"+rowStr[2:]))
+			} else if i == m.artifactIndex {
+				mb.WriteString(styleNormal.Render(" •"+rowStr[2:]))
+			} else {
+				mb.WriteString(styleNormal.Render(rowStr))
+			}
+			mb.WriteString("\n")
 		}
 	}
 	mainView := mainStyle.Render(mb.String())
@@ -513,7 +530,7 @@ func (m model) View() string {
 
 	var db strings.Builder
 	db.WriteString(styleHeading.Render(" Details & Status") + "\n")
-	if len(m.artifacts) > 0 && m.artifactIndex < len(m.artifacts) && (m.state == stateArtifacts) {
+	if len(m.artifacts) > 0 && m.artifactIndex < len(m.artifacts) {
 		a := m.artifacts[m.artifactIndex]
 		db.WriteString(fmt.Sprintf("  Full Name : %s\n", truncate(a.FullName, sidebarW+mainW-16)))
 		db.WriteString(fmt.Sprintf("  Digest    : %s\n", a.Digest))
