@@ -4,7 +4,7 @@ pkgs.buildGoModule {
   version = "0.1.0-dev";
   src = ../.;
 
-  vendorHash = "sha256-jD8v1jmMBZ4lGTDIx17L943tMWYZO6rv8Mrl13YfVEk=";
+  vendorHash = "sha256-M62PE/L48oEXcQJk8TMvzP4cyTj4DHTcwkedL3/Z58w=";
 
   nativeBuildInputs = [pkgs.installShellFiles];
   env.CGO_ENABLED = 0;
