@@ -57,6 +57,7 @@ func init() {
 	rootCmd.AddCommand(newAliasCmd())
 	rootCmd.AddCommand(newRecentCmd())
 	rootCmd.AddCommand(newTuiCmd())
+	rootCmd.AddCommand(newWebCmd())
 
 	// Add dynamic shortcut commands
 	for _, name := range config.ShortcutNames() {

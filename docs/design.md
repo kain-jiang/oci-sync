@@ -1,6 +1,6 @@
 # oci-sync 设计文档
 
-> 版本：0.1.0 | 更新时间：2026-04-20
+> 版本：0.6.0 | 更新时间：2026-06-08
 
 ## 1. 项目概述
 
@@ -21,7 +21,7 @@
 │                         CLI 层                            │
 │ cmd/root.go   cmd/push.go   cmd/pull.go   cmd/shortcut.go│
 │ cmd/delete.go cmd/list.go   cmd/label.go  cmd/alias.go   │
-│ cmd/recent.go cmd/tui.go                                 │
+│ cmd/recent.go cmd/tui.go   cmd/web.go                    │
 └──────────────┬───────────────┬──────────────┬────────────┘
                │              │
       ┌────────▼───┐    ┌─────▼────────┐
@@ -41,6 +41,13 @@
                       │  ~/.cache/oci-sync/    │
                       │   activity.json       │
                       └───────────────────────┘
+
+┌──────────────────────────────────────────────────────────┐
+│                     WebUI 层 (可选)                        │
+│  React SPA (Bun + Vite)  ←→  Go HTTP API (cmd/web.go)   │
+│  web/                        internal/web/               │
+│  前端通过 go:embed 嵌入二进制                               │
+└──────────────────────────────────────────────────────────┘
 ```
 
 **数据流（push）**
@@ -111,6 +118,20 @@ CLI 启动 → 启动全屏分栏交互界面 (Tab 切换 Focus，p 拉取，d �
         → [oci.Pull] 或 [oci.Delete] 执行本地拉取或远程删除，并以居中弹窗展示执行状态
 ```
 
+**数据流（web）**
+```
+Go HTTP Server (cmd/web.go + internal/web/)
+        → 内嵌 React SPA (go:embed web/dist/)
+        → API 路由: /api/shortcuts, /api/artifacts, /api/push, /api/pull, /api/delete
+        → 复用 internal/oci, archive, crypto, config 模块
+
+前端 (web/ — Bun + Vite + React + TypeScript)
+        → 开发模式: Vite dev server :5173, proxy /api → Go :8080
+        → 生产模式: bun run build → web/dist/ → go:embed 嵌入二进制
+        → 组件: Sidebar(Shortcuts), ArtifactTable, DetailPanel, Push/Pull/DeleteDialog
+        → Dracula 配色主题
+```
+
 **数据流（activity recording）**
 ```
 CLI push/pull/delete/label 操作成功
@@ -141,8 +162,9 @@ oci-sync/
 │   ├── alias.go                   # alias 子命令 (list/add/remove)
 │   ├── recent.go                  # recent 子命令（查看活动历史）
 │   ├── tui.go                     # tui 子命令（全屏分栏管理）
+│   ├── web.go                     # web 子命令（HTTP API + 嵌入前端 serve）
 │   └── utils.go                   # 工具函数（formatBytes）
-└── internal/
+├── internal/
     ├── config/
     │   └── config.go              # 配置文件支持
     ├── archive/
@@ -157,8 +179,16 @@ oci-sync/
     │   └── cache.go               # Activity cache 持久化
     ├── xdg/
     │   └── xdg.go                 # XDG 目录规范支持
-    └── version/
+    ├── version/
     │   └── version.go             # 版本信息
+    └── web/
+        ├── server.go              # HTTP 路由、中间件、嵌入前端 serve
+        └── handlers.go            # API handlers
+├── web/                           # React 前端项目 (Bun + Vite)
+│   ├── package.json
+│   ├── vite.config.ts
+│   ├── index.html
+│   └── src/                       # React + TypeScript 源码
 
 ---
 
@@ -273,6 +303,54 @@ type Activity struct {
 | `ConfigDir` | `() string` | 配置目录（`$XDG_CONFIG_HOME` 或 `~/.config`） |
 | `CacheDir` | `() string` | 缓存目录（`$XDG_CACHE_HOME` 或 `~/.cache`） |
 | `DataDir` | `() string` | 数据目录（`$XDG_DATA_HOME` 或 `~/.local/share`） |
+
+### 4.6 `internal/web` — Web HTTP Server
+
+| 文件 | 说明 |
+|------|------|
+| `server.go` | HTTP 路由注册、CORS/日志中间件、嵌入前端静态文件 serve |
+| `handlers.go` | API handlers: shortcuts、artifacts、push、pull、delete |
+
+**API 端点**
+
+| 方法 | 路径 | 说明 | 复用模块 |
+|------|------|------|---------|
+| GET | `/api/shortcuts` | 列出所有 shortcuts | `config.GetAllShortcuts()` |
+| GET | `/api/artifacts?repo=<repo>` | 列出仓库构件 | `oci.List()` |
+| POST | `/api/push` | multipart 上传推送 | `archive.Pack()` + `crypto.Encrypt()` + `oci.Push()` |
+| POST | `/api/pull` | 拉取并返回 tar.gz 流 | `oci.Pull()` + `crypto.Decrypt()` |
+| POST | `/api/delete` | 删除构件 | `oci.Delete()` |
+| GET | `/*` | 嵌入的前端静态文件 | `http.FS` + SPA fallback |
+
+**前端嵌入**
+
+前端通过 `go:embed` 在编译时嵌入到 Go 二进制中：
+- `main.go` 声明 `//go:embed all:web/dist`
+- 通过 `fs.Sub(webDistFS, "web/dist")` 提取子树
+- 传递 `fs.FS` 给 `internal/web.NewServer()`
+- 构建流程：`cd web && bun run build` → `go build`
+
+### 4.7 `web/` — React 前端
+
+| 技术 | 用途 |
+|------|------|
+| Bun | 运行时和包管理器 |
+| Vite | 构建工具，开发模式 proxy `/api` → Go server |
+| React 19 | UI 框架 |
+| TypeScript | 类型安全 |
+
+**组件结构**
+
+| 组件 | 功能 |
+|------|------|
+| `Sidebar` | Shortcuts 列表，点击加载 artifacts |
+| `Toolbar` | Push/Pull/Delete/Refresh 操作按钮 |
+| `ArtifactTable` | 构件表格（TAG/SIZE/ENCRYPTED/VERSION/LABELS） |
+| `DetailPanel` | 底部详情面板 |
+| `PushDialog` | 文件选择 + tag + passphrase + labels |
+| `PullDialog` | 确认 + passphrase（加密构件） |
+| `DeleteDialog` | 删除确认 |
+| `Toast` | 操作结果通知 |
 
 ---
 
@@ -515,6 +593,36 @@ oci-sync tui
 - `r` (在 Artifacts 栏)：重新加载当前 tag 列表
 - `Esc`：关闭输入弹窗或将焦点退回到左侧 Shortcuts 栏
 - `q` / `Ctrl+C`：退出工具
+
+### web
+
+启动 HTTP 服务器，提供 WebUI 和 API。
+
+```bash
+# 生产模式（前端嵌入二进制）
+oci-sync web [--port 8080]
+
+# 开发模式（启用 CORS，配合 Vite dev server）
+oci-sync web --dev [--port 8080]
+```
+
+| 参数 | 必选 | 说明 |
+|------|------|------|
+| `--port` | 否 | HTTP 服务器端口，默认 8080 |
+| `--dev` | 否 | 开发模式：启用 CORS，跳过嵌入前端 |
+
+**使用流程**
+
+```bash
+# 开发
+go run . web --port 3000 --dev     # 终端 1: Go API
+cd web && bun run dev               # 终端 2: Vite dev :5173
+
+# 生产
+cd web && bun run build             # 构建前端到 web/dist/
+go build -o oci-sync .              # 前端自动嵌入二进制
+./oci-sync web                      # 单一二进制 serve 所有
+```
 
 ---
 

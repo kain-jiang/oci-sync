@@ -16,6 +16,7 @@
 - `oci-sync alias remove`：删除 shortcut。
 - `oci-sync recent`：查看活动历史记录。
 - `oci-sync tui`：启动全屏分栏交互式 TUI 管理 shortcuts 的 artifacts。
+- `oci-sync web`：启动 HTTP 服务器，提供浏览器端 WebUI 管理（前端通过 go:embed 嵌入二进制）。
 - `oci-sync <name> push`：快捷推送命令，通过 `shortcuts.<name>.repo` 配置仓库，仅用 `--tag` 指定远程标签，支持 `--label`。
 - `oci-sync <name> pull`：快捷拉取命令，通过 `shortcuts.<name>.repo` 配置仓库，仅用 `--tag` 指定远程标签。
 - `oci-sync <name> list`：快捷列举命令，通过 `shortcuts.<name>.repo` 配置仓库，直接列出所有 tags，支持 `--label` 筛选。
@@ -142,7 +143,24 @@ oci-sync tui
   - `Esc`：关闭弹窗或退回左侧边栏
   - `q` / `Ctrl+C`：退出工具
 
-9. shortcut commands
+9. web
+
+启动 HTTP 服务器，提供浏览器端 WebUI 管理 shortcuts 的 artifacts。
+
+```bash
+# 生产模式（前端嵌入二进制）
+oci-sync web [--port 8080]
+
+# 开发模式（启用 CORS，配合 Vite dev server）
+oci-sync web --dev [--port 8080]
+```
+
+- **前端嵌入**：通过 `go:embed` 将 React 构建产物嵌入 Go 二进制，单一文件即可部署
+- **API**：提供 REST API（/api/shortcuts, /api/artifacts, /api/push, /api/pull, /api/delete）
+- **前端**：React + TypeScript + Vite，Dracula 配色主题
+- **功能**：Shortcuts 侧边栏、构件表格、Push/Pull/Delete 弹窗操作
+
+10. shortcut commands
 
 shortcut 命令依赖配置文件中的 `shortcuts.<name>.repo`：
 

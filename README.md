@@ -209,6 +209,46 @@ oci-sync tui
 - **分栏结构**：左侧展示 shortcuts 列表，右侧展示该仓库下的 tags/artifacts 列表，下方实时更新展示选中 artifact 的详细元数据（包括 Full Name、Digest、Version、Size、Encryption 状态和 Labels）。
 - **极简操作**：支持 Tab/左右方向键在分栏间切换，使用 `p` 键拉取/解密（弹窗输入本地路径与密码），使用 `d` 键删除（弹窗确认），使用 `r` 键刷新 tags。
 
+### web — WebUI 管理
+
+启动 HTTP 服务器，提供浏览器端 WebUI 管理快捷仓库和 artifacts。
+
+```bash
+# 生产模式（前端嵌入二进制，单一文件部署）
+oci-sync web
+
+# 指定端口
+oci-sync web --port 3000
+
+# 开发模式（启用 CORS，配合前端 dev server）
+oci-sync web --dev
+```
+
+**开发流程**
+
+```bash
+# 终端 1: 启动 Go API
+go run . web --port 3000 --dev
+
+# 终端 2: 启动前端 dev server
+cd web && bun install && bun run dev
+# 打开 http://localhost:5173
+```
+
+**生产构建**
+
+```bash
+cd web && bun run build   # 构建前端到 web/dist/
+go build -o oci-sync .    # 前端自动嵌入二进制
+./oci-sync web            # 单一二进制，自动 serve 前端
+```
+
+**功能**
+- 左侧 Sidebar 展示 shortcuts 列表
+- 主区域展示构件表格（TAG / SIZE / ENCRYPTED / VERSION / LABELS）
+- 支持 Push（文件/目录上传）、Pull（下载）、Delete 操作
+- Dracula 配色主题
+
 
 ### 参数说明
 

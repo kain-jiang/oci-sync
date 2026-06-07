@@ -9,7 +9,11 @@ func BaseDir(envKey, defaultSubdir string) string {
 	if dir := os.Getenv(envKey); dir != "" {
 		return dir
 	}
-	return filepath.Join(os.Getenv("HOME"), defaultSubdir)
+	home := os.Getenv("HOME")
+	if home == "" {
+		home = os.Getenv("USERPROFILE")
+	}
+	return filepath.Join(home, defaultSubdir)
 }
 
 func ConfigDir() string {
