@@ -227,8 +227,8 @@ oci-sync web --dev
 **开发流程**
 
 ```bash
-# 终端 1: 启动 Go API
-go run . web --port 3000 --dev
+# 终端 1: 启动 Go API（默认 :8080，CORS 已启用）
+go run . web --dev
 
 # 终端 2: 启动前端 dev server
 cd web && bun install && bun run dev
@@ -246,7 +246,7 @@ go build -o oci-sync .    # 前端自动嵌入二进制
 **功能**
 - 左侧 Sidebar 展示 shortcuts 列表
 - 主区域展示构件表格（TAG / SIZE / ENCRYPTED / VERSION / LABELS）
-- 支持 Push（文件/目录上传）、Pull（下载）、Delete 操作
+- 支持 Push（文件上传）、Pull（下载，带进度条）、Delete 操作
 - Dracula 配色主题
 
 

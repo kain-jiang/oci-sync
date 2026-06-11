@@ -43,12 +43,10 @@ export function PushDialog({ repo, onConfirm, onClose }: Props) {
               <input
                 type="file"
                 multiple
-                // @ts-expect-error webkitdirectory is non-standard
-                webkitdirectory=""
                 onChange={(e) => setFiles(e.target.files)}
               />
             </div>
-            <div className="hint">Select a directory or multiple files</div>
+            <div className="hint">Select one or more files to push</div>
           </div>
           <div className="form-group">
             <label>Passphrase (optional)</label>

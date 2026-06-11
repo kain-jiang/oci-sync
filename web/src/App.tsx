@@ -10,6 +10,18 @@ import { DeleteDialog } from './components/DeleteDialog'
 import { Toast } from './components/Toast'
 import { pushArtifact, pullArtifact, deleteArtifact } from './api/client'
 
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`
+  const units = ['KiB', 'MiB', 'GiB', 'TiB']
+  let v = n
+  let u = -1
+  do {
+    v /= 1024
+    u++
+  } while (v >= 1024 && u < units.length - 1)
+  return `${v.toFixed(1)} ${units[u]}`
+}
+
 type DialogType = 'push' | 'pull' | 'delete' | null
 
 export default function App() {
@@ -27,6 +39,7 @@ export default function App() {
 
   const [dialog, setDialog] = useState<DialogType>(null)
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
+  const [pullProgress, setPullProgress] = useState<{ loaded: number; total: number } | null>(null)
 
   const showToast = useCallback((message: string, type: 'success' | 'error') => {
     setToast({ message, type })
@@ -56,8 +69,12 @@ export default function App() {
       const tag = selectedArtifact.tag
       const repo = selectedArtifact.repo
       setDialog(null)
+      setPullProgress({ loaded: 0, total: 0 })
       try {
-        const blob = await pullArtifact(repo, tag, passphrase || undefined)
+        const blob = await pullArtifact(repo, tag, passphrase || undefined, (loaded, total) => {
+          setPullProgress({ loaded, total })
+        })
+        setPullProgress(null)
         const url = URL.createObjectURL(blob)
         const a = document.createElement('a')
         a.href = url
@@ -68,6 +85,7 @@ export default function App() {
         setTimeout(() => URL.revokeObjectURL(url), 1000)
         showToast(`Pulled ${tag}`, 'success')
       } catch (e) {
+        setPullProgress(null)
         showToast(`Pull failed: ${e}`, 'error')
       }
     },
@@ -105,6 +123,19 @@ export default function App() {
           loading={loading}
         />
         {error && <div className="error-bar">{error}</div>}
+        {pullProgress && (
+          <div className="progress-bar">
+            <div className="progress-text">
+              Downloading... {pullProgress.total > 0 ? `${formatBytes(pullProgress.loaded)} / ${formatBytes(pullProgress.total)}` : `${formatBytes(pullProgress.loaded)}`}
+            </div>
+            <div className="progress-track">
+              <div
+                className="progress-fill"
+                style={{ width: pullProgress.total > 0 ? `${(pullProgress.loaded / pullProgress.total) * 100}%` : '100%' }}
+              />
+            </div>
+          </div>
+        )}
         {loading ? (
           <div className="loading">
             <div className="spinner" />

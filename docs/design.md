@@ -256,7 +256,7 @@ random nonce ──────────────────────�
 
 **数据结构 `ArtifactInfo`**
 - `FullName`: 镜像全名，格式为 `<registry>/<repo>:<tag>`（用于 JSON/YAML 输出）
-- `Repo`: 仓库名称
+- `Repo`: 仓库完整引用，格式为 `<registry>/<repo>`（用于 pull/delete 操作）
 - `Tag`: 镜像标签
 - `Digest`: 内容摘要
 - `Encrypted`: 是否加密（布尔值）
@@ -348,7 +348,7 @@ type Activity struct {
 | `ArtifactTable` | 构件表格（TAG/SIZE/ENCRYPTED/VERSION/LABELS） |
 | `DetailPanel` | 底部详情面板 |
 | `PushDialog` | 文件选择 + tag + passphrase + labels |
-| `PullDialog` | 确认 + passphrase（加密构件） |
+| `PullDialog` | 确认 + passphrase（加密构件）+ 下载进度条 |
 | `DeleteDialog` | 删除确认 |
 | `Toast` | 操作结果通知 |
 
@@ -615,13 +615,13 @@ oci-sync web --dev [--port 8080]
 
 ```bash
 # 开发
-go run . web --port 3000 --dev     # 终端 1: Go API
-cd web && bun run dev               # 终端 2: Vite dev :5173
+go run . web --dev                 # 终端 1: Go API (默认 :8080, CORS 已启用)
+cd web && bun run dev              # 终端 2: Vite dev :5173, proxy → Go :8080
 
 # 生产
-cd web && bun run build             # 构建前端到 web/dist/
-go build -o oci-sync .              # 前端自动嵌入二进制
-./oci-sync web                      # 单一二进制 serve 所有
+cd web && bun run build            # 构建前端到 web/dist/
+go build -o oci-sync .             # 前端自动嵌入二进制
+./oci-sync web                     # 单一二进制 serve 所有
 ```
 
 ---
@@ -630,6 +630,6 @@ go build -o oci-sync .              # 前端自动嵌入二进制
 
 - **`--insecure`**：支持 HTTP（非 TLS）仓库
 - **`--platform`**：多架构 manifest list 支持
-- **进度条**：大文件上传/下载显示进度
+- **进度条**：下载进度实时显示（已完成），上传进度待实现
 - **增量同步**：对比 digest 跳过未变更内容
 - **多文件 layer**：多个 layer 对应多个文件，支持细粒度更新

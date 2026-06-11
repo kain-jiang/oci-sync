@@ -362,9 +362,9 @@ func listRepoTags(ctx context.Context, registry string, repo *remote.Repository)
 						labels[k] = v
 					}
 				}
-				results = append(results, ArtifactInfo{
-					FullName:  registry + "/" + repoName + ":" + tag,
-					Repo:      repoName,
+			results = append(results, ArtifactInfo{
+				FullName:  registry + "/" + repoName + ":" + tag,
+				Repo:      registry + "/" + repoName,
 					Tag:       tag,
 					Digest:    desc.Digest.String(),
 					Encrypted: encStr == "true",

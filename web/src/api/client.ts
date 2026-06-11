@@ -41,6 +41,7 @@ export async function pullArtifact(
   repo: string,
   tag: string,
   passphrase?: string,
+  onProgress?: (loaded: number, total: number) => void,
 ): Promise<Blob> {
   const res = await fetch(`${BASE}/pull`, {
     method: 'POST',
@@ -51,7 +52,18 @@ export async function pullArtifact(
     const body = await res.json().catch(() => ({ error: res.statusText }))
     throw new Error(body.error || `HTTP ${res.status}`)
   }
-  return res.blob()
+  const contentLength = Number(res.headers.get('Content-Length')) || 0
+  const reader = res.body!.getReader()
+  const chunks: ArrayBuffer[] = []
+  let loaded = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    chunks.push(value.buffer)
+    loaded += value.length
+    onProgress?.(loaded, contentLength)
+  }
+  return new Blob(chunks)
 }
 
 export async function deleteArtifact(repo: string, tag: string): Promise<void> {
