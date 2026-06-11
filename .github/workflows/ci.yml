@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main, feat/*]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    name: Build and Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: 'go.mod'
+          cache-dependency-path: go.sum
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Build web frontend
+        working-directory: web
+        run: bun install && bun run build
+
+      - name: Run Go tests
+        run: go test ./...
+
+      - name: Build Go binary
+        run: go build -o oci-sync .
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: oci-sync-linux-amd64
+          path: oci-sync
+          retention-days: 7

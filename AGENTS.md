@@ -24,8 +24,9 @@ AI 绝对不能自动执行以下操作，除非用户明确、清晰地用中�
 ```bash
 go test ./...
 go build ./...
-git add -A           # nix build 前必须暂存文件
-nix build
+cd web && bun run build && cd ..  # 重新构建前端（修改 web/ 后必须）
+git add -A                        # nix build 前必须暂存文件
+nix build                         # 构建 Nix 包（需要 Nix，仅 nix 相关改动时必须）
 ```
 
 ## 📋 开发命令
@@ -35,6 +36,8 @@ nix build
 go test ./...                    # 运行单元测试
 go build ./...                   # 构建所有包
 go build -o temps/oci-sync .     # 构建二进制到 temps 目录
+cd web && bun run build          # 构建前端到 web/dist/（嵌入二进制）
+cd web && bun run dev            # 启动 Vite dev server（开发模式）
 git add -A                       # 暂存所有变更（nix build 前必须）
 nix build                        # 构建 Nix 包（需要 Nix）
 nix flake update                 # 更新 flake.lock 依赖
@@ -87,11 +90,15 @@ internal/
   crypto/         # AES-256-GCM 加密
   oci/            # oras-go v2 push/pull/list/delete
   config/         # YAML 配置解析（gopkg.in/yaml.v3）
+  web/            # HTTP API server（server.go + handlers.go）
 nix/              # Nix flake 包和开发 shell
 docs/
   design.md       # 完整架构和 API 文档
 temps/            # 测试产物和构建输出（git 忽略）
 e2e/              # Python e2e 测试项目（独立 uv 项目）
+web/              # React 前端（Bun + Vite + TypeScript）
+  src/            # 源码
+  dist/           # 构建产物（go:embed 嵌入二进制）
 ```
 
 ## 🎯 关键实现注意事项
