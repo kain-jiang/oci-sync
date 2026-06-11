@@ -22,6 +22,13 @@ jobs:
           go-version-file: 'go.mod'
           cache-dependency-path: go.sum
 
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Build web frontend
+        working-directory: web
+        run: bun install && bun run build
+
       - name: Determine version
         id: version
         run: |
@@ -60,6 +67,7 @@ jobs:
             oci-sync-darwin-amd64
             oci-sync-darwin-arm64
             oci-sync-windows-amd64.exe
+            oci-sync-windows-arm64.exe
           draft: false
           prerelease: ${{ steps.prerelease.outputs.is_prerelease }}
           generate_release_notes: true
