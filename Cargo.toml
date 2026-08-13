@@ -1,0 +1,63 @@
+[package]
+name = "oci-sync"
+version = "0.7.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Sync local files or directories to OCI-compatible image registries"
+license = "MIT"
+keywords = ["oci", "registry", "sync", "backup", "artifact"]
+categories = ["command-line-utilities", "development-tools"]
+
+[dependencies]
+# CLI framework
+clap = { version = "4", features = ["derive", "wrap_help"] }
+clap_complete = "4"
+
+# Async runtime & HTTP
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+futures = "0.3"
+
+# OCI registry interaction
+oci-distribution = { version = "0.11", default-features = false, features = ["rustls-tls"] }
+# Docker credential store/helper support
+docker_credential = "1"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yml = "0.0.13"
+
+# Archive (tar.gz)
+tar = "0.4"
+flate2 = "1"
+
+# Crypto: AES-256-GCM + scrypt (RustCrypto)
+aes-gcm = "0.11"
+scrypt = "0.12"
+rand = "0.8"
+
+# Misc
+sha2 = "0.10"
+hex = "0.4"
+base64 = "0.22"
+chrono = { version = "0.4", features = ["serde"] }
+dirs = "5"
+regex = "1"
+anyhow = "1"
+thiserror = "2"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# UI: TUI + tables + progress bars
+ratatui = { version = "0.30", features = ["crossterm"] }
+crossterm = "0.28"
+tabled = "0.21"
+indicatif = "0.18"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

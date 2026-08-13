@@ -89,6 +89,8 @@ e2e/
 
 **环境变量：**
 - 必填：`OCI_SYNC_TEST_REPO`（如 `registry.example.com/test/repo`）
+- 本机已搭建标准测试仓库：**`OCI_SYNC_TEST_REPO=localhost:5000/oci-sync-e2e/test`**
+  （CNCF distribution，匿名访问，支持 delete/catalog；管理脚本 `/root/oci-registry/start.sh` 与 `stop.sh`）
 - 可选：`OCI_SYNC_TEST_TAG_BASE`、`OCI_SYNC_TEST_PASSPHRASE`
 - `OCI_SYNC_BIN`（二进制路径，默认 `target/release/oci-sync`）
 - `OCI_SYNC_KEEP_WORKDIR=1` 保留测试产物（默认自动清理 `e2e/runtime-check/`）

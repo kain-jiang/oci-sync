@@ -1,0 +1,4 @@
+/target
+temps/
+*.swp
+.DS_Store
