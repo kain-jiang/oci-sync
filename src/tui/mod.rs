@@ -441,7 +441,7 @@ impl TuiApp {
 
     fn apply_sort(&mut self) {
         if self.sort_by_size {
-            self.artifacts.sort_by(|a, b| b.size.cmp(&a.size));
+            self.artifacts.sort_by_key(|b| std::cmp::Reverse(b.size));
         } else {
             self.artifacts.sort_by(|a, b| a.tag.cmp(&b.tag));
         }
