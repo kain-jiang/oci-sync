@@ -1,235 +1,107 @@
 # oci-sync
 
-将本地文件或目录同步到 OCI 兼容的镜像仓库中。支持文件/目录、可选加密，支持配置文件凭据和 Docker credential store 认证。
+将本地文件或目录同步到 OCI 兼容镜像仓库的 CLI 工具（Rust 重写版）。
 
-## 安装
+> 功能与原 Go 版（v0.6.0）保持一致，交互与 UX 全新设计。原 Go 参考实现见 `/root/oci-sync-go-backup`。
 
-### 使用 Go
-```bash
-go install github.com/tiramission/oci-sync@latest
-```
+## 功能一览
 
-或从源码构建：
-```bash
-git clone https://github.com/tiramission/oci-sync.git
-cd oci-sync
-go build -o oci-sync .
-```
-
-### 使用 Nix (Flake)
-本项目已提供 `flake.nix`，Nix 用户可直接运行：
-```bash
-nix run github:tiramission/oci-sync -- --help
-```
-
-开发者也可直接进入开发环境：
-```bash
-nix develop github:tiramission/oci-sync
-```
-
-### 使用 Home Manager
-在 `flake.nix` 中引用 home-manager 模块：
-
-```nix
-{
-  inputs.home-manager.url = "github:nix-community/home-manager";
-  inputs.oci-sync.url = "github:tiramission/oci-sync";
-
-  outputs = { self, nixpkgs, home-manager, oci-sync }: {
-    homeConfigurations.myuser = home-manager.lib.homeManagerConfiguration {
-      modules = [
-        home-manager.nixosModules.home-manager
-        {
-          home.username = "myuser";
-          home.homeDirectory = "/home/myuser";
-          programs.oci-sync = {
-            enable = true;
-            settings = {
-              shortcuts = {
-                x.repo = "registry.example.com/myteam/files";
-              };
-            };
-          };
-        }
-        oci-sync.homeModules.oci-sync
-      ];
-    };
-  };
-}
-```
-
-## 前置条件
-
-通过配置文件或 `docker login` 登录目标仓库。
+- `push` — 本地文件/目录 → tar.gz →（可选 AES-256-GCM 加密）→ OCI artifact → 镜像仓库
+- `pull` — 从镜像仓库拉取 →（自动检测加密并解密）→ 解包到本地
+- `delete` — 删除远程 artifact（带确认提示）
+- `list` — 列出仓库或整个注册表中的 oci-sync artifact（支持标签筛选、多格式输出）
+- `label set/unset` — 管理 artifact 标签
+- `alias` — 管理快捷仓库（shortcuts）
+- `recent` — 查看操作历史（本地缓存）
+- `tui` — 全屏双栏交互界面
+- `completion` — 生成 shell 补全脚本（bash/zsh/fish/powershell）
+- `<name> push/pull/list/delete` — 动态快捷命令
 
 ## 使用
 
-### push — 推送到仓库
+### push
 
 ```bash
 # 推送目录（不加密）
 oci-sync push --local ./mydir --remote registry.example.com/myrepo:latest
 
-# 推送文件（加密）
-oci-sync push --local ./secret.txt --remote registry.example.com/myrepo:encrypted --passphrase mypassword
-
-# 使用简写标志
-oci-sync push -l ./mydir -r registry.example.com/myrepo:latest
-```
-
-### pull — 从仓库拉取
-
-```bash
-# 拉取（不加密）
-oci-sync pull --remote registry.example.com/myrepo:latest --local ./output
-
-# 拉取并解密
-oci-sync pull --remote registry.example.com/myrepo:encrypted --local ./output --passphrase mypassword
-
-# 使用简写标志
-oci-sync pull -r registry.example.com/myrepo:latest -l ./output
-```
-
-### <name> push / pull / list / delete — 动态快捷命令
-
-动态命令通过配置文件 `shortcuts.<name>.repo` 定义，只需通过 `--tag` 指定标签：
-
-```bash
-# 推送目录
-oci-sync x push --local ./mydir --tag latest
-
 # 推送文件并加密
-oci-sync x push --local ./secret.txt --tag encrypted --passphrase mypassword
+oci-sync push -l ./secret.txt -r registry.example.com/myrepo:encrypted --passphrase mypassword
 
-# 拉取到本地目录
-oci-sync x pull --tag latest --local ./output
+# 推送并设置标签，推送后自动校验
+oci-sync push -l ./data -r registry.example.com/myrepo:latest --label app=myapp --label env=prod --verify
+```
+
+### pull
+
+```bash
+# 拉取（内容加密时自动提示缺少 --passphrase）
+oci-sync pull -r registry.example.com/myrepo:latest -l ./output
 
 # 拉取并解密
-oci-sync x pull --tag encrypted --local ./output --passphrase mypassword
-
-# 列出快捷仓库下的所有 tags
-oci-sync x list
-
-# 以 JSON 格式输出
-oci-sync x list --format json
-
-# 筛选包含特定标签的镜像
-oci-sync x list --label app=myapp
-
-# 删除快捷仓库中的指定 tag
-oci-sync x delete --tag old-release
+oci-sync pull -r registry.example.com/myrepo:encrypted -l ./output --passphrase mypassword
 ```
 
-### delete — 删除仓库中的文件
+### delete（带确认）
 
 ```bash
-# 从远程仓库删除推送的文件
-oci-sync delete --remote registry.example.com/myrepo:latest
-
-# 使用简写标志
-oci-sync delete -r registry.example.com/myrepo:latest
+oci-sync delete -r registry.example.com/myrepo:old-tag     # 会先询问确认
+oci-sync delete -r registry.example.com/myrepo:old-tag --yes   # 跳过确认
 ```
 
-### list — 列出仓库中的文件镜像
+### list
 
 ```bash
-# 检索远程仓库中特定路径的文件镜像
-oci-sync list --remote registry.example.com/myrepo
-
-# 检索整个注册表下的所有由本工具上传的镜像记录
-oci-sync list -r registry.example.com
-
-# 以 JSON 格式输出
+oci-sync list -r registry.example.com/myrepo            # 仓库级
+oci-sync list -r registry.example.com                   # 注册表级（catalog）
 oci-sync list -r registry.example.com/myrepo --format json
-
-# 以 YAML 格式输出
-oci-sync list -r registry.example.com/myrepo -f yaml
-
-# 筛选包含特定标签的镜像
 oci-sync list -r registry.example.com/myrepo --label app=myapp
-
-# 筛选包含特定标签 key 的镜像
-oci-sync list -r registry.example.com/myrepo --label env
+oci-sync list -r registry.example.com/myrepo --tag v1.0
 ```
 
-### label — 管理标签
+### label
 
 ```bash
-# 设置标签
-oci-sync label set --remote registry.example.com/myrepo:tag key1=value1 key2=value2
-
-# 设置空值标签
-oci-sync label set --remote registry.example.com/myrepo:tag app=
-
-# 删除标签
-oci-sync label unset --remote registry.example.com/myrepo:tag key1 key2
+oci-sync label set -r registry.example.com/myrepo:tag app=web env=
+oci-sync label unset -r registry.example.com/myrepo:tag app
 ```
 
-### alias — 管理 shortcuts
+### alias（快捷仓库）
 
 ```bash
-# 列出所有 shortcuts
-oci-sync alias list
-
-# 添加 shortcut
 oci-sync alias add x --repo registry.example.com/myteam/files
-
-# 删除 shortcut
-oci-sync alias remove x
+oci-sync alias list
+oci-sync x push -l ./mydir -t latest
+oci-sync x pull -t latest -l ./output
+oci-sync x list --format json
+oci-sync x delete -t old-release --yes
 ```
 
-### recent — 查看活动历史
-
-查看 push/pull/delete/label 等操作的历史记录（存储在本地 cache）。
+### recent
 
 ```bash
-# 查看最近活动（默认 20 条）
-oci-sync recent
-
-# 指定数量
-oci-sync recent --limit 10
-
-# 指定格式
-oci-sync recent --format json
-oci-sync recent --format yaml
-
-# 清空历史记录
+oci-sync recent                  # 最近 20 条
+oci-sync recent -n 5 -f json
+oci-sync recent --stats          # 各操作类型统计
 oci-sync recent --clear
 ```
 
-### tui — 全屏交互式 TUI 管理
-
-使用全屏分栏终端界面以极佳的视觉交互管理快捷仓库和 artifacts。
+### tui
 
 ```bash
-# 启动 TUI 界面
 oci-sync tui
 ```
 
-- **分栏结构**：左侧展示 shortcuts 列表，右侧展示该仓库下的 tags/artifacts 列表，下方实时更新展示选中 artifact 的详细元数据（包括 Full Name、Digest、Version、Size、Encryption 状态和 Labels）。
-- **极简操作**：支持 Tab/左右方向键在分栏间切换，使用 `p` 键拉取/解密（弹窗输入本地路径与密码），使用 `d` 键删除（弹窗确认），使用 `r` 键刷新 tags。
+### 补全
 
+```bash
+oci-sync completion bash > /etc/bash_completion.d/oci-sync
+oci-sync completion zsh > "${fpath[1]}/_oci-sync"
+```
 
-### 参数说明
+## 配置文件
 
-| 参数 | 说明 |
-|------|------|
-| `--local`, `-l` | 本地文件或目录路径（push）或目标目录（pull）|
-| `--remote`, `-r` | OCI 仓库引用 (push/pull/delete) 或注册表引用 (list) |
-| `--tag` | 快捷命令 `x push / x pull / x delete` 使用的标签 |
-| `--passphrase`| 加密/解密口令（可选） |
-| `--format`, `-f` | 输出格式：`table`（默认）、`json`、`yaml` |
-| `--label` | 设置/筛选标签（格式：`key=value`，value 可为空；仅 `key` 时检查 key 是否存在） |
-| `--quiet`, `-q` | 开启静默模式，仅输出错误信息 |
-
-### 配置文件
-
-配置文件使用 YAML 格式，搜索路径如下：
-
-1. 当前工作目录 `./oci-sync.yaml`
-2. 用户配置目录 `~/.config/oci-sync/oci-sync.yaml`
-
-配置文件格式：
+搜索顺序：`./oci-sync.yaml` → `~/.config/oci-sync/oci-sync.yaml`
 
 ```yaml
 shortcuts:
@@ -242,26 +114,20 @@ auths:
     password: mytoken
 ```
 
-可用配置项：
+认证优先级：**配置 `auths` > Docker credential store**（`docker login` 兼容）。
 
-| 配置项 | 默认值 | 说明 |
-|--------|--------|------|
-| `shortcuts.<name>.repo` | - | 动态命令的默认仓库地址 |
-| `auths.<registry>.username` | - | 该仓库的认证用户名 |
-| `auths.<registry>.password` | - | 该仓库的认证密码或令牌 |
+## 安装
 
-认证优先级：**配置文件 `auths` > Docker credential store**
+```bash
+cargo install --git https://github.com/kain-jiang/oci-sync.git
+# 或本地构建
+cargo build --release && install -m755 target/release/oci-sync /usr/local/bin/
+```
 
-## 工作原理
+## 设计文档
 
-**push**：本地文件/目录 → tar.gz 打包 → [可选] AES-256-GCM 加密 → 推送至 OCI 仓库
-
-**pull**：从 OCI 仓库检查加密状态 → 校验密码参数（若缺失则快速失败）→ 拉取数据 → [可选] 解密 → 解压 tar.gz → 写入本地
-
-加密使用 scrypt 从口令派生密钥（N=32768），每次加密使用随机 salt 和 nonce，安全可靠。
-
-认证支持配置文件 per-registry 凭据（`auths.<registry>`），也兼容 Docker credential store（`~/.docker/config.json`）。
-
-## 详细设计
-
-见 [docs/design.md](docs/design.md)。
+- [功能规格](docs/features.md)
+- [交互设计](docs/interaction.md)
+- [架构设计](docs/design.md)
+- [AI 落地实现指南](docs/implementation.md)
+- [测试策略](docs/testing.md)

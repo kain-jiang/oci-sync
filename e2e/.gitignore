@@ -1,4 +1,0 @@
-runtime-check
-.venv
-src/e2e.egg-info
-**/__pycache__
