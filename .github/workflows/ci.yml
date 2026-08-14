@@ -45,15 +45,6 @@ jobs:
     name: E2E against local registry
     runs-on: ubuntu-latest
     needs: check
-    services:
-      registry:
-        image: registry:2
-        ports:
-          - 5000:5000
-        # Default registry:2 config disables manifest delete; mount a config
-        # with storage.delete.enabled=true so the e2e delete tests can run.
-        volumes:
-          - .github/registry-config.yml:/etc/docker/registry/config.yml
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -67,9 +58,19 @@ jobs:
       - name: Build release binary
         run: cargo build --release
 
+      # Default registry:2 config disables manifest delete; mount a config
+      # with storage.delete.enabled=true so the e2e delete tests can run.
+      # (Started in a step instead of `services` because service volumes
+      # cannot use relative paths.)
+      - name: Start test registry
+        run: |
+          docker run -d --rm -p 5000:5000 --name oci-sync-test-registry \
+            -v "${{ github.workspace }}/.github/registry-config.yml:/etc/docker/registry/config.yml" \
+            registry:2
+
       - name: Wait for registry
         run: |
-          for i in $(seq 1 20); do
+          for i in $(seq 1 30); do
             curl -sf http://localhost:5000/v2/ && break || sleep 1
           done
           curl -sf http://localhost:5000/v2/
@@ -79,3 +80,7 @@ jobs:
         env:
           OCI_SYNC_TEST_REPO: localhost:5000/oci-sync-e2e/ci
           OCI_SYNC_BIN: ${{ github.workspace }}/target/release/oci-sync
+
+      - name: Stop test registry
+        if: always()
+        run: docker rm -f oci-sync-test-registry || true
