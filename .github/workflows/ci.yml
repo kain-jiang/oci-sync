@@ -50,6 +50,10 @@ jobs:
         image: registry:2
         ports:
           - 5000:5000
+        # Default registry:2 config disables manifest delete; mount a config
+        # with storage.delete.enabled=true so the e2e delete tests can run.
+        volumes:
+          - .github/registry-config.yml:/etc/docker/registry/config.yml
     steps:
       - name: Checkout
         uses: actions/checkout@v4
