@@ -7,7 +7,6 @@ use std::path::Path;
 use std::time::Instant;
 
 use anyhow::{Context, Result, anyhow};
-use tracing::info;
 
 use crate::cache::{self, Activity, ActivityType};
 use crate::cli::PushArgs;
@@ -48,20 +47,28 @@ pub async fn run_ref(
 
     let label_map = parse_labels(labels)?;
 
-    info!(path = local, "Packing files...");
+    let mut stage = crate::progress::Stage::new("Packing files");
+    crate::stage_log!(path = local, "Packing files...");
     let data = crate::archive::pack(Path::new(local))
         .with_context(|| format!("pack failed for {}", local))?;
-    info!(
+    stage.finish(format!(
+        "Packed {} ({})",
+        local,
+        format_bytes(data.len() as i64)
+    ));
+    crate::stage_log!(
         size = format_bytes(data.len() as i64).as_str(),
         "Pack complete"
     );
 
     let encrypted = passphrase.is_some_and(|p| !p.is_empty());
     let data = if encrypted {
-        info!("Encrypting...");
+        let mut stage = crate::progress::Stage::new("Encrypting");
+        crate::stage_log!("Encrypting...");
         let cipher =
             crypto::encrypt(&data, passphrase.unwrap_or_default()).context("encryption failed")?;
-        info!(
+        stage.finish(format!("Encrypted ({})", format_bytes(cipher.len() as i64)));
+        crate::stage_log!(
             size = format_bytes(cipher.len() as i64).as_str(),
             "Encryption complete"
         );
@@ -70,7 +77,12 @@ pub async fn run_ref(
         data
     };
 
-    info!(ref = remote_ref, "Pushing to registry...");
+    let mut stage = crate::progress::Stage::new("Pushing to registry");
+    crate::stage_log!(ref = remote_ref, "Pushing to registry...");
+    stage.set_message(format!(
+        "Pushing {remote_ref} ({})",
+        format_bytes(data.len() as i64)
+    ));
     let client = OciClient::new(&parsed.host, cfg)?;
     client
         .push(&parsed.repo, &tag, &data, encrypted, &label_map)
@@ -78,7 +90,8 @@ pub async fn run_ref(
         .with_context(|| format!("push failed for {remote_ref}"))?;
 
     if verify {
-        info!("Verifying pushed artifact...");
+        stage.set_message("Verifying pushed artifact...");
+        crate::stage_log!("Verifying pushed artifact...");
         let result = client
             .pull(&parsed.repo, &tag)
             .await
@@ -91,10 +104,15 @@ pub async fn run_ref(
         if result.encrypted != encrypted {
             return Err(anyhow!("verify failed: encryption flag mismatch"));
         }
-        info!("Verification passed ✓");
+        crate::stage_log!("Verification passed ✓");
     }
 
-    info!(
+    stage.finish(format!(
+        "✓ pushed {remote_ref} ({}) in {:.1}s",
+        format_bytes(data.len() as i64),
+        started.elapsed().as_secs_f64()
+    ));
+    crate::stage_log!(
         ref = remote_ref,
         seconds = format!("{:.1}", started.elapsed().as_secs_f64()).as_str(),
         "Push successful ✓"

@@ -91,3 +91,49 @@ async fn dispatch_shortcut(cfg: &config::Config, raw: Vec<String>) -> Result<()>
         ),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn shortcut_push_args_parse() {
+        let a = ShortcutPushArgs::try_parse_from([
+            "push", "-l", "./dir", "-t", "latest", "--label", "app=web",
+        ])
+        .unwrap();
+        assert_eq!(a.local, "./dir");
+        assert_eq!(a.tag, "latest");
+        assert_eq!(a.labels, vec!["app=web".to_string()]);
+        assert!(!a.verify);
+    }
+
+    #[test]
+    fn shortcut_push_requires_local_and_tag() {
+        assert!(ShortcutPushArgs::try_parse_from(["push", "-t", "x"]).is_err());
+        assert!(ShortcutPushArgs::try_parse_from(["push", "-l", "./d"]).is_err());
+    }
+
+    #[test]
+    fn shortcut_pull_short_flags() {
+        let a =
+            ShortcutPullArgs::try_parse_from(["pull", "-t", "v1", "-l", "./out", "-f"]).unwrap();
+        assert_eq!(a.tag, "v1");
+        assert_eq!(a.local, "./out");
+        assert!(a.force);
+    }
+
+    #[test]
+    fn shortcut_list_defaults_to_table() {
+        let a = ShortcutListArgs::try_parse_from(["list"]).unwrap();
+        assert_eq!(a.format, OutputFormat::Table);
+        assert!(a.labels.is_empty());
+    }
+
+    #[test]
+    fn shortcut_delete_requires_tag() {
+        assert!(ShortcutDeleteArgs::try_parse_from(["delete"]).is_err());
+        let a = ShortcutDeleteArgs::try_parse_from(["delete", "-t", "old", "-y"]).unwrap();
+        assert!(a.yes);
+    }
+}

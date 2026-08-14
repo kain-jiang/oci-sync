@@ -27,7 +27,7 @@ oci-sync pull --remote <ref> --local <dir> [--passphrase <pwd>] [--force]
 
 - 先拉 manifest 检查加密状态：已加密但缺 `--passphrase` → **快速失败**（不下载数据）
 - 未加密但提供了 `--passphrase` → 警告并忽略
-- `--force`：覆盖目标目录中已存在的文件（默认覆盖行为与 Go 版一致，见交互文档）
+- 目标目录已存在时默认**拒绝覆盖**并报错（安全默认，与 delete 确认同理）；`--force` 允许覆盖（对 Go 版"静默覆盖"的改进）
 
 ### 1.3 delete
 

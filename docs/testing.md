@@ -1,6 +1,6 @@
 # 测试策略（Testing Strategy）
 
-> 分层：单元测试（纯逻辑）→ 集成测试（e2e，真实仓库）。`src/oci` 无单元测试（需真实仓库，遵守 AGENTS.md 约定）。
+> 分层：单元测试（纯逻辑）→ 集成测试（e2e，真实仓库）。`src/oci` 仅 `parse_ref` 等纯解析逻辑有单元测试，网络交互部分无单测（需真实仓库，遵守 AGENTS.md 约定）。
 
 ## 1. 单元测试（cargo test）
 
@@ -62,38 +62,32 @@
 
 ### 1.6 `src/cli`
 
-- 每个命令的 clap 解析：必填缺失报错、短/长标志等价（`try_parse_from`）
-- shortcut 二次解析：`["x","push","-l","./d","-t","latest"]` → 正确参数
-- `dispatch_shortcut` 未知子命令 → 报错
+- 每个命令的 clap 解析：必填缺失报错、短/长标志等价（`try_parse_from`）✓ 已实现
+- shortcut 二次解析：`["x","push","-l","./d","-t","latest"]` → 正确参数 ✓ 已实现（dispatch.rs tests）
+- `dispatch_shortcut` 未知子命令 → 报错（dispatch 逻辑，未单独单测）
 
 ### 1.7 `src/tui`
 
-- 状态机转移（选中/搜索/弹窗/确认）不依赖终端渲染（纯逻辑抽离）
-- 键位 → 动作映射表驱动测试
+- 状态机转移（选中/搜索/弹窗/确认）不依赖终端渲染（纯逻辑抽离）✓ 已实现
+- 键位 → 动作映射表驱动测试 ✓ 已实现（SortMode 循环/标签/spinner 帧）
 
-## 2. 集成测试（e2e，Python + uv）
+## 2. 集成测试（e2e，bash 冒烟脚本）
 
-独立工程 `e2e/`（pyproject + uv.lock），沿用 Go 版骨架：
+共享脚本 `scripts/e2e.sh`（20 项断言），本地与 CI 通用：
 
-```
-e2e/
-├── pyproject.toml
-└── src/e2e/
-    ├── __main__.py   # 入口
-    ├── run.py        # 用例编排
-    ├── case.py       # 用例基类
-    ├── config.py     # 环境变量读取
-    ├── env.py        # 临时目录/二进制路径
-    └── state.py      # 断言工具
+```bash
+cargo build --release
+OCI_SYNC_TEST_REPO=localhost:5000/oci-sync-e2e/ci ./scripts/e2e.sh
 ```
 
 **环境变量：**
-- 必填：`OCI_SYNC_TEST_REPO`（如 `registry.example.com/test/repo`）
+- 必填：`OCI_SYNC_TEST_REPO`（如 `localhost:5000/oci-sync-e2e/ci`）
 - 本机已搭建标准测试仓库：**`OCI_SYNC_TEST_REPO=localhost:5000/oci-sync-e2e/test`**
   （zot，匿名访问，默认支持 delete/catalog；管理脚本 `/root/oci-registry/start.sh` 与 `stop.sh`）
 - 可选：`OCI_SYNC_TEST_TAG_BASE`、`OCI_SYNC_TEST_PASSPHRASE`
 - `OCI_SYNC_BIN`（二进制路径，默认 `target/release/oci-sync`）
-- `OCI_SYNC_KEEP_WORKDIR=1` 保留测试产物（默认自动清理 `e2e/runtime-check/`）
+
+CI（`.github/workflows/ci.yml`）用 services 起 `ghcr.io/project-zot/zot-linux-amd64:latest`（监听 :5000，默认配置即支持 delete），随后执行同一脚本。
 
 **用例清单：**
 
@@ -105,15 +99,17 @@ e2e/
 | 4 | label set/unset | push → label set → list --label 命中 → label unset → list 不再命中 |
 | 5 | shortcut 命令 | 配置临时 `oci-sync.yaml` → `alias add` → `<name> push/pull/list/delete` |
 | 6 | list 格式 | `--format json/yaml` 可解析 |
-| 7 | 重复 push 覆盖 tag | 同 tag 两次 push，list 仍一条记录，digest 更新 |
-| 8 | 空目录 / 空文件 push-pull | 往返一致 |
-| 9 | 认证 | 私有仓库（若测试 repo 需认证）用配置 auths 或 docker login |
-| 10 | 兼容性（可选）| Go 版推送 → Rust 版 pull；Rust 版推送 → Go 版 pull |
+| 7 | 重复 push 覆盖 tag | 同 tag 两次 push，list 仍一条记录，digest 更新（未覆盖，规划中）|
+| 8 | 空目录 / 空文件 push-pull | 往返一致（未覆盖，规划中）|
+| 9 | 认证 | 私有仓库（若测试 repo 需认证）用配置 auths 或 docker login（未覆盖，规划中）|
+| 10 | 兼容性（可选）| Go 版推送 → Rust 版 pull；Rust 版推送 → Go 版 pull（未覆盖，规划中）|
+
+> 标注"未覆盖"的条目为规划用例，当前 `scripts/e2e.sh` 尚未实现；其余条目均已覆盖。
 
 **运行：**
 ```bash
 cargo build --release
-OCI_SYNC_TEST_REPO=registry.example.com/test/repo uv run -m e2e
+OCI_SYNC_TEST_REPO=localhost:5000/oci-sync-e2e/ci ./scripts/e2e.sh
 ```
 
 ## 3. 手工验收清单（发布前）

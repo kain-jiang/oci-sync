@@ -24,8 +24,8 @@ const HELP_TEXT: &str = "\
 │ Tab / ← → / h l      switch pane (shortcuts|artifacts) │
 │ ↑ ↓ / j k            move selection                   │
 │ Enter (shortcuts)    load artifacts of that repo      │
-│ /                    search/filter tags               │
-│ s                    sort artifacts by size (toggle)  │
+│ /                    search/filter tags                   │
+│ s                    sort: name → size ↓ → size ↑ (cycle) │
 │ r                    refresh artifacts                │
 │ ?                    toggle this help                 │
 ├─ Actions ─────────────────────────────────────────────┤
@@ -41,19 +41,60 @@ enum Focus {
     Artifacts,
 }
 
+/// Artifact sort mode; `s` cycles Name → SizeDesc → SizeAsc → Name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum SortMode {
+    #[default]
+    Name,
+    SizeDesc,
+    SizeAsc,
+}
+
+impl SortMode {
+    fn next(self) -> Self {
+        match self {
+            SortMode::Name => SortMode::SizeDesc,
+            SortMode::SizeDesc => SortMode::SizeAsc,
+            SortMode::SizeAsc => SortMode::Name,
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            SortMode::Name => "name",
+            SortMode::SizeDesc => "size ↓",
+            SortMode::SizeAsc => "size ↑",
+        }
+    }
+}
+
+/// Focus within the pull dialog; Tab cycles Path → Passphrase → Buttons.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum PullField {
+    #[default]
+    Path,
+    Passphrase,
+    Buttons,
+}
+
 enum Dialog {
     None,
     Pull {
         path: String,
-        path_cursor: usize,
         passphrase: String,
-        pass_cursor: usize,
+        field: PullField,
+        /// 0 = Pull, 1 = Cancel (active only when `field == Buttons`)
+        button: usize,
         busy: bool,
     },
     Delete {
+        /// 0 = Delete, 1 = Cancel (default focus: Cancel — safety first)
+        button: usize,
         busy: bool,
     },
-    Help,
+    Help {
+        scroll: usize,
+    },
 }
 
 enum TuiMsg {
@@ -76,7 +117,8 @@ struct TuiApp {
     focus: Focus,
     search: String,
     search_active: bool,
-    sort_by_size: bool,
+    sort: SortMode,
+    loading: bool,
     dialog: Dialog,
     toast: Option<(String, bool, Instant)>, // (msg, is_error, shown_at)
     quit: bool,
@@ -117,7 +159,8 @@ impl TuiApp {
             focus: Focus::Shortcuts,
             search: String::new(),
             search_active: false,
-            sort_by_size: false,
+            sort: SortMode::Name,
+            loading: false,
             dialog: Dialog::None,
             toast: None,
             quit: false,
@@ -156,15 +199,18 @@ impl TuiApp {
         while let Ok(msg) = self.rx.try_recv() {
             match msg {
                 TuiMsg::ArtifactsLoaded { repo, artifacts } => {
+                    self.loading = false;
                     if self.artifacts_repo.as_deref() == Some(repo.as_str()) {
                         self.artifacts = artifacts;
                         self.artifact_state = TableState::default();
                         if !self.artifacts.is_empty() {
                             self.artifact_state.select(Some(0));
                         }
+                        self.apply_sort();
                     }
                 }
                 TuiMsg::LoadFailed(e) => {
+                    self.loading = false;
                     self.toast = Some((format!("load failed: {e}"), true, Instant::now()))
                 }
                 TuiMsg::OpDone(m) => self.toast = Some((m, false, Instant::now())),
@@ -198,31 +244,38 @@ impl TuiApp {
 
         let mut action = DialogAction::None;
         match &mut self.dialog {
-            Dialog::Help => {
-                if key.code == KeyCode::Esc
-                    || key.code == KeyCode::Char('?')
-                    || key.code == KeyCode::Char('q')
-                {
-                    action = DialogAction::Close;
+            Dialog::Help { scroll } => match key.code {
+                KeyCode::Esc | KeyCode::Char('?') | KeyCode::Char('q') => {
+                    action = DialogAction::Close
                 }
-            }
-            Dialog::Delete { busy } => {
+                KeyCode::Up | KeyCode::Char('k') => *scroll = scroll.saturating_sub(1),
+                KeyCode::Down | KeyCode::Char('j') => *scroll = scroll.saturating_add(1),
+                _ => {}
+            },
+            Dialog::Delete { button, busy } => {
                 if *busy {
                     return;
                 }
                 match key.code {
-                    KeyCode::Char('y') | KeyCode::Enter => action = DialogAction::ConfirmDelete,
+                    // Buttons: Delete(0) / Cancel(1), Cancel focused by default
+                    KeyCode::Char('y') | KeyCode::Enter if *button == 0 => {
+                        action = DialogAction::ConfirmDelete
+                    }
+                    KeyCode::Enter if *button == 1 => action = DialogAction::Close,
                     KeyCode::Char('n') | KeyCode::Char('q') | KeyCode::Esc => {
                         action = DialogAction::Close
+                    }
+                    KeyCode::Left | KeyCode::Right | KeyCode::Char('h') | KeyCode::Char('l') => {
+                        *button = if *button == 0 { 1 } else { 0 };
                     }
                     _ => {}
                 }
             }
             Dialog::Pull {
                 path,
-                path_cursor,
                 passphrase,
-                pass_cursor,
+                field,
+                button,
                 busy,
             } => {
                 if *busy {
@@ -231,35 +284,52 @@ impl TuiApp {
                 match key.code {
                     KeyCode::Esc => action = DialogAction::Close,
                     KeyCode::Tab => {
-                        std::mem::swap(path, passphrase);
-                        std::mem::swap(path_cursor, pass_cursor);
+                        *field = match field {
+                            PullField::Path => PullField::Passphrase,
+                            PullField::Passphrase => PullField::Buttons,
+                            PullField::Buttons => PullField::Path,
+                        };
                     }
-                    KeyCode::Backspace => {
-                        if *path_cursor > 0 && !path.is_empty() {
+                    KeyCode::Backspace => match field {
+                        PullField::Path => {
                             path.pop();
-                            *path_cursor = path.chars().count();
-                        } else if *path_cursor == 0 && !passphrase.is_empty() {
-                            passphrase.pop();
-                            *pass_cursor = passphrase.chars().count();
                         }
+                        PullField::Passphrase => {
+                            passphrase.pop();
+                        }
+                        PullField::Buttons => {}
+                    },
+                    KeyCode::Left | KeyCode::Char('h') if *field == PullField::Buttons => {
+                        *button = if *button == 0 { 1 } else { 0 };
+                    }
+                    KeyCode::Right | KeyCode::Char('l') if *field == PullField::Buttons => {
+                        *button = if *button == 0 { 1 } else { 0 };
                     }
                     KeyCode::Enter => {
-                        if path.is_empty() {
-                            self.toast =
-                                Some(("local path is required".into(), true, Instant::now()));
-                        } else {
-                            action = DialogAction::StartPull(path.clone(), passphrase.clone());
+                        if *field == PullField::Buttons {
+                            if *button == 0 {
+                                // "Pull"
+                                if path.is_empty() {
+                                    self.toast = Some((
+                                        "local path is required".into(),
+                                        true,
+                                        Instant::now(),
+                                    ));
+                                } else {
+                                    action =
+                                        DialogAction::StartPull(path.clone(), passphrase.clone());
+                                }
+                            } else {
+                                // "Cancel"
+                                action = DialogAction::Close;
+                            }
                         }
                     }
-                    KeyCode::Char(c) => {
-                        if *path_cursor == 0 {
-                            path.push(c);
-                            *path_cursor = path.chars().count();
-                        } else {
-                            passphrase.push(c);
-                            *pass_cursor = passphrase.chars().count();
-                        }
-                    }
+                    KeyCode::Char(c) => match field {
+                        PullField::Path => path.push(c),
+                        PullField::Passphrase => passphrase.push(c),
+                        PullField::Buttons => {}
+                    },
                     _ => {}
                 }
             }
@@ -272,15 +342,18 @@ impl TuiApp {
             DialogAction::StartPull(path, passphrase) => {
                 self.dialog = Dialog::Pull {
                     path: path.clone(),
-                    path_cursor: path.chars().count(),
                     passphrase: passphrase.clone(),
-                    pass_cursor: passphrase.chars().count(),
+                    field: PullField::Path,
+                    button: 0,
                     busy: true,
                 };
                 self.do_pull(path, passphrase).await;
             }
             DialogAction::ConfirmDelete => {
-                self.dialog = Dialog::Delete { busy: true };
+                self.dialog = Dialog::Delete {
+                    button: 1,
+                    busy: true,
+                };
                 self.do_delete().await;
             }
             DialogAction::None => {}
@@ -288,7 +361,7 @@ impl TuiApp {
         if had_action
             || matches!(
                 self.dialog,
-                Dialog::Help | Dialog::Delete { .. } | Dialog::Pull { .. }
+                Dialog::Help { .. } | Dialog::Delete { .. } | Dialog::Pull { .. }
             )
         {
             return;
@@ -326,7 +399,7 @@ impl TuiApp {
                 self.search.clear();
             }
             KeyCode::Char('s') => {
-                self.sort_by_size = !self.sort_by_size;
+                self.sort = self.sort.next();
                 self.apply_sort();
             }
             KeyCode::Char('r') => {
@@ -340,19 +413,23 @@ impl TuiApp {
                         path: std::env::current_dir()
                             .map(|p| p.display().to_string())
                             .unwrap_or_else(|_| ".".to_string()),
-                        path_cursor: 0,
                         passphrase: String::new(),
-                        pass_cursor: 0,
+                        field: PullField::Path,
+                        button: 0,
                         busy: false,
                     };
                 }
             }
             KeyCode::Char('d') => {
                 if matches!(self.focus, Focus::Artifacts) && !self.artifacts.is_empty() {
-                    self.dialog = Dialog::Delete { busy: false };
+                    // Cancel is the default focus (safety first).
+                    self.dialog = Dialog::Delete {
+                        button: 1,
+                        busy: false,
+                    };
                 }
             }
-            KeyCode::Char('?') => self.dialog = Dialog::Help,
+            KeyCode::Char('?') => self.dialog = Dialog::Help { scroll: 0 },
             KeyCode::Esc => {
                 if matches!(self.focus, Focus::Artifacts) {
                     self.focus = Focus::Shortcuts;
@@ -413,6 +490,7 @@ impl TuiApp {
         self.artifacts_repo = Some(name.clone());
         self.artifacts = Vec::new();
         self.artifact_state = TableState::default();
+        self.loading = true;
         self.toast = Some((format!("loading {repo} ..."), false, Instant::now()));
 
         let host = repo.split('/').next().unwrap_or("").to_string();
@@ -440,10 +518,10 @@ impl TuiApp {
     }
 
     fn apply_sort(&mut self) {
-        if self.sort_by_size {
-            self.artifacts.sort_by_key(|b| std::cmp::Reverse(b.size));
-        } else {
-            self.artifacts.sort_by(|a, b| a.tag.cmp(&b.tag));
+        match self.sort {
+            SortMode::Name => self.artifacts.sort_by(|a, b| a.tag.cmp(&b.tag)),
+            SortMode::SizeDesc => self.artifacts.sort_by_key(|b| std::cmp::Reverse(b.size)),
+            SortMode::SizeAsc => self.artifacts.sort_by_key(|b| b.size),
         }
     }
 
@@ -564,22 +642,28 @@ impl TuiApp {
         let main = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
+                Constraint::Length(1),
                 Constraint::Min(3),
                 Constraint::Length(6),
                 Constraint::Length(1),
             ])
             .split(area);
 
-        self.draw_panes(frame, main[0]);
-        self.draw_details(frame, main[1]);
-        self.draw_status_bar(frame, main[2]);
+        self.draw_top_bar(frame, main[0]);
+        self.draw_panes(frame, main[1]);
+        self.draw_details(frame, main[2]);
+        self.draw_status_bar(frame, main[3]);
 
         match &self.dialog {
-            Dialog::Help => self.draw_help(frame, area),
+            Dialog::Help { scroll } => self.draw_help(frame, area, *scroll),
             Dialog::Pull {
-                path, passphrase, ..
-            } => self.draw_pull_dialog(frame, area, path, passphrase),
-            Dialog::Delete { .. } => self.draw_delete_dialog(frame, area),
+                path,
+                passphrase,
+                field,
+                button,
+                ..
+            } => self.draw_pull_dialog(frame, area, path, passphrase, *field, *button),
+            Dialog::Delete { button, .. } => self.draw_delete_dialog(frame, area, *button),
             Dialog::None => {}
         }
 
@@ -659,10 +743,24 @@ impl TuiApp {
         let header = Row::new(vec!["TAG", "ENCRYPTED", "SIZE", "VERSION", "LABELS"])
             .style(Style::new().fg(Color::Cyan).add_modifier(Modifier::BOLD));
         let title = if matches!(self.focus, Focus::Artifacts) {
-            Line::from(format!(" ARTIFACTS ({repo_title}) "))
-                .style(Style::new().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+            Line::from(format!(
+                " ARTIFACTS ({repo_title}){} ",
+                if self.loading {
+                    spinner_char().to_string()
+                } else {
+                    String::new()
+                }
+            ))
+            .style(Style::new().fg(Color::Cyan).add_modifier(Modifier::BOLD))
         } else {
-            Line::from(format!(" ARTIFACTS ({repo_title}) "))
+            Line::from(format!(
+                " ARTIFACTS ({repo_title}){} ",
+                if self.loading {
+                    spinner_char().to_string()
+                } else {
+                    String::new()
+                }
+            ))
         };
         let table = Table::new(rows, widths)
             .header(header)
@@ -671,6 +769,21 @@ impl TuiApp {
             .column_spacing(1);
         let mut state = self.artifact_state;
         frame.render_stateful_widget(table, panes[1], &mut state);
+
+        // Loading indicator inside the artifacts pane.
+        if self.loading && self.filtered_artifacts().is_empty() {
+            let inner = Rect {
+                x: panes[1].x + 1,
+                y: panes[1].y + 1,
+                width: panes[1].width.saturating_sub(2),
+                height: panes[1].height.saturating_sub(2),
+            };
+            frame.render_widget(
+                Paragraph::new(format!("{} Loading tags...", spinner_char()))
+                    .style(Style::new().fg(Color::DarkGray)),
+                inner,
+            );
+        }
     }
 
     fn draw_details(&self, frame: &mut Frame, area: Rect) {
@@ -718,8 +831,32 @@ impl TuiApp {
         );
     }
 
+    fn draw_top_bar(&self, frame: &mut Frame, area: Rect) {
+        let halves = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+            .split(area);
+        let style = Style::new().fg(Color::Black).bg(Color::Cyan);
+        let left = format!(" oci-sync v{} ", crate::VERSION);
+        let host = self
+            .selected_shortcut()
+            .map(|(_, r)| r.split('/').next().unwrap_or("").to_string())
+            .unwrap_or_default();
+        let right = format!(" {host}   Q 退出 ");
+        frame.render_widget(Paragraph::new(left).style(style), halves[0]);
+        frame.render_widget(
+            Paragraph::new(right)
+                .style(style)
+                .alignment(ratatui::layout::Alignment::Right),
+            halves[1],
+        );
+    }
+
     fn draw_status_bar(&self, frame: &mut Frame, area: Rect) {
-        let hints = " Tab/←→ switch  ↑↓/jk move  Enter load  / search  s sort  p pull  d delete  r refresh  ? help  q quit ";
+        let hints = format!(
+            " Tab/←→ switch  ↑↓/jk move  Enter load  / search  s sort({})  p pull  d delete  r refresh  ? help  q quit ",
+            self.sort.label()
+        );
         let style = Style::new().fg(Color::Black).bg(if self.search_active {
             Color::Yellow
         } else {
@@ -728,64 +865,107 @@ impl TuiApp {
         frame.render_widget(Paragraph::new(hints).style(style), area);
     }
 
-    fn draw_help(&self, frame: &mut Frame, area: Rect) {
-        let popup = centered_rect(70, 80, area);
+    fn draw_help(&self, frame: &mut Frame, area: Rect, scroll: usize) {
+        // Full-screen overlay (95% of the area) with scrolling.
+        let popup = centered_rect(95, 95, area);
         frame.render_widget(Clear, popup);
         frame.render_widget(
-            Paragraph::new(HELP_TEXT).block(
-                Block::new()
-                    .borders(Borders::ALL)
-                    .title(" HELP ")
-                    .border_style(Style::new().fg(Color::Cyan)),
-            ),
+            Paragraph::new(HELP_TEXT)
+                .block(
+                    Block::new()
+                        .borders(Borders::ALL)
+                        .title(" HELP — ↑↓/jk scroll, Esc close ")
+                        .border_style(Style::new().fg(Color::Cyan)),
+                )
+                .scroll((scroll as u16, 0)),
             popup,
         );
     }
 
-    fn draw_pull_dialog(&self, frame: &mut Frame, area: Rect, path: &str, passphrase: &str) {
-        let popup = centered_rect(60, 40, area);
+    fn draw_pull_dialog(
+        &self,
+        frame: &mut Frame,
+        area: Rect,
+        path: &str,
+        passphrase: &str,
+        field: PullField,
+        button: usize,
+    ) {
+        let popup = centered_rect(60, 42, area);
         frame.render_widget(Clear, popup);
         let inner = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Length(3),
                 Constraint::Length(3),
+                Constraint::Length(3),
                 Constraint::Length(1),
             ])
             .split(popup);
 
+        let path_border = if field == PullField::Path {
+            Style::new().fg(Color::Yellow)
+        } else {
+            Style::new().fg(Color::Cyan)
+        };
         frame.render_widget(
             Paragraph::new(path.to_string()).block(
                 Block::new()
                     .borders(Borders::ALL)
                     .title(" Local path ")
-                    .border_style(Style::new().fg(Color::Cyan)),
+                    .border_style(path_border),
             ),
             inner[0],
         );
         let masked: String = passphrase.chars().map(|_| '*').collect();
+        let pass_border = if field == PullField::Passphrase {
+            Style::new().fg(Color::Yellow)
+        } else {
+            Style::new().fg(Color::Cyan)
+        };
         frame.render_widget(
             Paragraph::new(masked).block(
                 Block::new()
                     .borders(Borders::ALL)
                     .title(" Passphrase (optional) ")
-                    .border_style(Style::new().fg(Color::Cyan)),
+                    .border_style(pass_border),
             ),
             inner[1],
         );
+
+        // Buttons: [ Pull ] [ Cancel ], navigated with ←/→ when focused.
+        let btn_style = |selected: bool| {
+            if field == PullField::Buttons && selected {
+                Style::new().fg(Color::Black).bg(Color::Green)
+            } else {
+                Style::new().fg(Color::DarkGray)
+            }
+        };
         frame.render_widget(
-            Paragraph::new("Enter: pull   Tab: switch field   Esc: cancel")
-                .style(Style::new().fg(Color::DarkGray)),
+            Paragraph::new(Line::from(vec![
+                Span::styled(" [ Pull ] ", btn_style(button == 0)),
+                Span::styled(" [ Cancel ] ", btn_style(button == 1)),
+            ])),
             inner[2],
+        );
+        frame.render_widget(
+            Paragraph::new("Tab: next field   ←/→: choose button   Enter: confirm   Esc: cancel")
+                .style(Style::new().fg(Color::DarkGray)),
+            inner[3],
         );
     }
 
-    fn draw_delete_dialog(&self, frame: &mut Frame, area: Rect) {
-        let popup = centered_rect(55, 35, area);
+    fn draw_delete_dialog(&self, frame: &mut Frame, area: Rect, button: usize) {
+        let popup = centered_rect(58, 38, area);
         frame.render_widget(Clear, popup);
+        let inner = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(3), Constraint::Length(3)])
+            .split(popup);
+
         let text = match self.selected_artifact() {
             Some(a) => format!(
-                "Delete {}:{} ({})\n\nThis cannot be undone. Press y to confirm, n to cancel.",
+                "Delete {}:{} ({})\n\nThis cannot be undone.",
                 a.repo, a.tag, a.digest
             ),
             None => "Nothing selected".to_string(),
@@ -797,7 +977,27 @@ impl TuiApp {
                     .title(" DELETE ")
                     .border_style(Style::new().fg(Color::Red)),
             ),
-            popup,
+            inner[0],
+        );
+
+        // [Delete] [Cancel] — Cancel focused by default (safety first).
+        let btn_style = |selected: bool| {
+            if selected {
+                Style::new().fg(Color::Black).bg(if button == 0 {
+                    Color::Red
+                } else {
+                    Color::DarkGray
+                })
+            } else {
+                Style::new().fg(Color::DarkGray)
+            }
+        };
+        frame.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::styled(" [ Delete ] ", btn_style(button == 0)),
+                Span::styled(" [ Cancel ] ", btn_style(button == 1)),
+            ])),
+            inner[1],
         );
     }
 
@@ -810,6 +1010,18 @@ impl TuiApp {
             popup,
         );
     }
+}
+
+/// Rotating spinner frame for the TUI (driven by wall-clock time).
+fn spinner_char() -> char {
+    const FRAMES: [char; 10] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+    let i = (std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0)
+        / 80) as usize
+        % FRAMES.len();
+    FRAMES[i]
 }
 
 fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
@@ -829,4 +1041,29 @@ fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
             Constraint::Percentage((100 - percent_x) / 2),
         ])
         .split(vertical[1])[1]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sort_mode_cycles() {
+        assert_eq!(SortMode::Name.next(), SortMode::SizeDesc);
+        assert_eq!(SortMode::SizeDesc.next(), SortMode::SizeAsc);
+        assert_eq!(SortMode::SizeAsc.next(), SortMode::Name);
+    }
+
+    #[test]
+    fn sort_mode_labels() {
+        assert_eq!(SortMode::Name.label(), "name");
+        assert_eq!(SortMode::SizeDesc.label(), "size ↓");
+        assert_eq!(SortMode::SizeAsc.label(), "size ↑");
+    }
+
+    #[test]
+    fn spinner_frames_are_ascii_braille() {
+        let c = spinner_char();
+        assert!(('⠋'..='⠏').contains(&c) || "⠙⠹⠸⠼⠴⠦⠧⠇".contains(c));
+    }
 }

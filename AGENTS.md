@@ -39,14 +39,15 @@ cargo fmt
 ```
 
 **集成测试：**
-- 完整运行时检查：`cd e2e && uv run -m e2e`（Python e2e 项目，独立 uv 工程）
-  - 必须：`OCI_SYNC_TEST_REPO` 环境变量（如 `registry.example.com/test/repo`）
-  - 可选：`OCI_SYNC_TEST_TAG_BASE`、`OCI_SYNC_TEST_PASSPHRASE`
-  - 覆盖 push/list/pull/delete/label 完整流程
+- 完整运行时检查：`./scripts/e2e.sh`（bash 冒烟脚本，20 项断言）
+  - 必须：`OCI_SYNC_TEST_REPO` 环境变量（如 `localhost:5000/oci-sync-e2e/ci`）
+  - 可选：`OCI_SYNC_TEST_TAG_BASE`、`OCI_SYNC_TEST_PASSPHRASE`、`OCI_SYNC_BIN`
+  - 覆盖 push/list/pull/delete/label/shortcut/catalog 完整流程
+  - CI 使用 zot 容器（`ghcr.io/project-zot/zot-linux-amd64`，默认支持 delete）
 
 **临时文件和测试数据：**
 - Rust 构建产物：`target/` 目录（.gitignore）
-- e2e 测试产物：`e2e/runtime-check/` 子目录
+- e2e 测试产物：`$TMPDIR` 临时目录（脚本自动清理）
 - 禁止在项目根目录创建临时文件
 
 ## 🔧 代码规范

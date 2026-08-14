@@ -120,8 +120,11 @@ impl OciClient {
             annotations.insert(k.clone(), v.clone());
         }
 
-        let manifest =
+        let mut manifest =
             OciImageManifest::build(std::slice::from_ref(&layer), &config, Some(annotations));
+        // Match the Go version's manifest exactly: carry the explicit
+        // manifest media type (build() leaves it as None).
+        manifest.media_type = Some(super::MEDIA_TYPE_MANIFEST.to_string());
 
         self.client
             .push(&reference, &[layer], config, &self.auth, Some(manifest))

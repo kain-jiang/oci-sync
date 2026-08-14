@@ -13,5 +13,6 @@ use clap::Parser;
 pub async fn run() -> Result<()> {
     let cli = args::Cli::parse();
     logging::init(cli.quiet);
+    crate::progress::set_quiet(cli.quiet);
     dispatch::dispatch(cli).await
 }

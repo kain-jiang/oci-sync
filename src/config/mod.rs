@@ -229,4 +229,48 @@ auths:
         let cfg = Config::default();
         assert!(cfg.shortcut_repo("nope").is_err());
     }
+
+    #[test]
+    fn config_search_prefers_cwd_over_user_dir() {
+        use std::sync::Mutex;
+        // Serializes with other config tests: this test changes the process
+        // working directory and XDG_CONFIG_HOME.
+        static LOCK: Mutex<()> = Mutex::new(());
+
+        let _guard = LOCK.lock().unwrap();
+        let dir =
+            std::env::temp_dir().join(format!("oci-sync-config-search-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("xdg/oci-sync")).unwrap();
+
+        // cwd config: shortcut "cwdsc"
+        std::fs::write(
+            dir.join("oci-sync.yaml"),
+            "shortcuts:\n  cwdsc:\n    repo: reg/cwd-repo\n",
+        )
+        .unwrap();
+        // user config (XDG): shortcut "usersc"
+        std::fs::write(
+            dir.join("xdg/oci-sync/oci-sync.yaml"),
+            "shortcuts:\n  usersc:\n    repo: reg/user-repo\n",
+        )
+        .unwrap();
+
+        let prev_dir = std::env::current_dir().unwrap();
+        // SAFETY: guarded by LOCK; no other test relies on cwd concurrently.
+        unsafe { std::env::set_var("XDG_CONFIG_HOME", dir.join("xdg")) };
+        std::env::set_current_dir(&dir).unwrap();
+
+        let cfg = load().unwrap();
+
+        std::env::set_current_dir(prev_dir).unwrap();
+
+        assert!(cfg.shortcuts.contains_key("cwdsc"), "cwd config must win");
+        assert!(
+            !cfg.shortcuts.contains_key("usersc"),
+            "user config must be ignored when cwd config exists"
+        );
+        assert_eq!(cfg.shortcut_repo("cwdsc").unwrap(), "reg/cwd-repo");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

@@ -25,6 +25,7 @@ pub const ANNOTATION_ENCRYPTED: &str = "io.oci-sync.encrypted";
 pub const ANNOTATION_VERSION: &str = "io.oci-sync.version";
 pub const ANNOTATION_PREFIX: &str = "io.oci-sync.";
 pub const MEDIA_TYPE_LAYER: &str = "application/octet-stream";
+pub const MEDIA_TYPE_MANIFEST: &str = "application/vnd.oci.image.manifest.v1+json";
 
 /// Metadata about one artifact discovered by `list`.
 #[derive(Debug, Clone, Serialize, Deserialize)]

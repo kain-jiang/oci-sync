@@ -15,6 +15,7 @@ pub mod config;
 pub mod crypto;
 pub mod oci;
 pub mod output;
+pub mod progress;
 pub mod tui;
 pub mod xdg;
 

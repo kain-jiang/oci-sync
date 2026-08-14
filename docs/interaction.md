@@ -54,15 +54,17 @@ oci-sync [--quiet]
 
 ### 2.3 进度反馈（push 示例）
 
+每个阶段由 spinner 指示器驱动（indicatif），阶段名 + 实时消息（当前大小/引用）：
+
 ```
-Packing ./mydir... [██████████████] 100% (12.3 MiB)
-Encrypting...      [██████████████] 100%
-Pushing to registry... [████████████████] 45% (5.2 MiB/s)
-✓ pushed ...
+⠹ Packing files...          →  ⠹ Packed ./mydir (12.3 MiB)
+⠹ Encrypting...             →  ⠹ Encrypted (12.3 MiB)
+⠹ Pushing registry.../repo  →  ✓ pushed registry.example.com/myrepo:latest (12.3 MiB) in 3.2s
 ```
 
-- 非 TTY：退化为行式日志（`Packing... done (12.3 MiB)`）
-- `--quiet`：只显示错误
+- TTY：spinner + 阶段消息（stderr），完成时保留 `✓ ...` 结果行
+- 非 TTY：进度条静默，退化为行式 INFO 日志（`Packing files...` / `Push successful ✓`）
+- `--quiet`：无进度条、无日志，只显示错误
 
 ### 2.4 确认交互
 
@@ -124,9 +126,9 @@ $ oci-sync delete -r registry.example.com/myrepo:old
 ### 3.3 状态与反馈
 
 - 加密 artifact 用 🔒 标记；解密后提示 `✓ decrypted`
-- 操作结果用**底部 toast 栏**展示（3 秒后消失），不打断当前界面
-- 网络错误：toast 显示错误摘要，详情在 `?` 帮助视图的日志区可查
-- 加载中：artifacts 栏显示 spinner
+- 操作结果用**底部 toast 栏**展示（4 秒后消失），不打断当前界面
+- 网络错误：toast 显示错误摘要
+- 加载中：artifacts 面板标题显示 spinner 动画 + 面板内 `⠹ Loading tags...`
 
 ### 3.4 弹窗规范
 
@@ -138,9 +140,11 @@ $ oci-sync delete -r registry.example.com/myrepo:old
 
 | 场景 | 交互 |
 |---|---|
-| 内容加密但没给 passphrase | 快速失败：`content is encrypted, provide --passphrase`（不下载数据）|
+| 内容加密但没给 passphrase | 快速失败：`content is encrypted, provide a decryption passphrase via --passphrase`（不下载数据）|
 | 密码错误（GCM 认证失败） | `decryption failed: wrong passphrase?` |
-| 引用格式错误 | `invalid reference "...": <原因>` + 期望格式示例 |
+| 引用格式错误 | `invalid reference "<ref>": <原因>` + 期望格式示例 |
 | 未登录/无权限 | `authentication required for <host> (docker login <host> or set auths.<host> in config)` |
 | shortcut 不存在 | `shortcut "x" not found (add shortcuts.x.repo to config)` |
-| 非 TTY 下 delete | `confirmation required but stdin is not a TTY (use --yes)` |
+| 非 TTY 下 delete | `confirmation required but stdin is not a TTY (use --yes to skip)` |
+| 目标目录已存在（pull）| `destination <path> already exists (use --force to overwrite)` |
+| 顶层错误 | TTY 红色 `✗ error: <msg>`；非 TTY 纯文本 `error: <msg>` |

@@ -1,7 +1,12 @@
 //! `alias` management: read-modify-write of the config file.
+//!
+//! Persistence follows the feature spec: write back to the cwd config file
+//! (`./oci-sync.yaml`) when one exists and is writable; otherwise fall back
+//! to the user config. A non-writable cwd config only logs a warning.
 
 use anyhow::{Result, anyhow};
-use tracing::info;
+use std::path::PathBuf;
+use tracing::{info, warn};
 
 use crate::cli::{AliasAddArgs, AliasRemoveArgs};
 use crate::config::{self, Config, Shortcut};
@@ -28,9 +33,7 @@ pub fn add(cfg: &Config, args: &AliasAddArgs) -> Result<()> {
         },
     );
 
-    // Always persist to the user config file so the change is visible to
-    // every invocation (cwd config wins on load, but falls back to user file).
-    let path = config::save_user(&new_cfg)?;
+    let path = persist(&new_cfg)?;
     info!(
         name = args.name,
         repo = args.repo,
@@ -51,11 +54,28 @@ pub fn remove(cfg: &Config, args: &AliasRemoveArgs) -> Result<()> {
     let mut new_cfg = cfg.clone();
     new_cfg.shortcuts.remove(&args.name);
 
-    let path = config::save_user(&new_cfg)?;
+    let path = persist(&new_cfg)?;
     info!(
         name = args.name,
         path = path.display().to_string().as_str(),
         "Shortcut removed ✓"
     );
     Ok(())
+}
+
+/// Write the config back: cwd config first (if present and writable), then
+/// the user config. A non-writable cwd config logs a warning and falls back.
+fn persist(cfg: &Config) -> Result<PathBuf> {
+    if let Some(path) = Config::file_used() {
+        match config::save_to(cfg, &path) {
+            Ok(()) => return Ok(path),
+            Err(e) => {
+                warn!(
+                    "config {} is not writable ({e:#}); falling back to user config",
+                    path.display()
+                );
+            }
+        }
+    }
+    config::save_user(cfg)
 }

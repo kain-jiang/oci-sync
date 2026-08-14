@@ -7,7 +7,7 @@
 use std::path::Path;
 
 use anyhow::{Context, Result, anyhow};
-use tracing::{info, warn};
+use tracing::warn;
 
 use crate::cache::{self, Activity, ActivityType};
 use crate::cli::PullArgs;
@@ -46,11 +46,16 @@ pub async fn run_ref(
     let client = OciClient::new(&parsed.host, cfg)?;
 
     // Fail fast on encrypted content without a passphrase (no data download).
-    info!(ref = remote_ref, "Checking encryption status...");
+    let mut stage = crate::progress::Stage::new("Checking encryption status");
+    crate::stage_log!(ref = remote_ref, "Checking encryption status...");
     let encrypted = client
         .is_encrypted(&parsed.repo, &tag)
         .await
         .with_context(|| format!("failed to check encryption status for {remote_ref}"))?;
+    stage.finish(format!(
+        "Encryption: {}",
+        if encrypted { "yes" } else { "no" }
+    ));
 
     let has_passphrase = passphrase.is_some_and(|p| !p.is_empty());
     if encrypted && !has_passphrase {
@@ -62,22 +67,29 @@ pub async fn run_ref(
         warn!("content is not encrypted, ignoring --passphrase flag");
     }
 
-    info!(ref = remote_ref, "Pulling from registry...");
+    let mut stage = crate::progress::Stage::new("Pulling from registry");
+    crate::stage_log!(ref = remote_ref, "Pulling from registry...");
     let result = client
         .pull(&parsed.repo, &tag)
         .await
         .with_context(|| format!("pull failed for {remote_ref}"))?;
-    info!(
+    stage.finish(format!(
+        "Downloaded ({})",
+        format_bytes(result.data.len() as i64)
+    ));
+    crate::stage_log!(
         size = format_bytes(result.data.len() as i64).as_str(),
         encrypted = result.encrypted,
         "Pull complete"
     );
 
     let data = if result.encrypted {
-        info!("Decrypting...");
+        let mut stage = crate::progress::Stage::new("Decrypting");
+        crate::stage_log!("Decrypting...");
         let plain = crypto::decrypt(&result.data, passphrase.unwrap_or_default())
             .context("decryption failed")?;
-        info!("Decryption complete");
+        stage.finish("Decrypted ✓");
+        crate::stage_log!("Decryption complete");
         plain
     } else {
         result.data
@@ -93,10 +105,11 @@ pub async fn run_ref(
         ));
     }
 
-    info!(dest = local, "Unpacking files...");
+    let mut stage = crate::progress::Stage::new("Unpacking files");
+    crate::stage_log!(dest = local, "Unpacking files...");
     crate::archive::unpack(&data, dest).with_context(|| format!("unpack failed to {}", local))?;
-
-    info!(dest = local, "Pull successful ✓");
+    stage.finish(format!("✓ pulled {remote_ref} → {local}"));
+    crate::stage_log!(dest = local, "Pull successful ✓");
 
     let _ = cache::add(Activity {
         kind: ActivityType::Pull,
